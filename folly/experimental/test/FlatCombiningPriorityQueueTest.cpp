@@ -1,11 +1,11 @@
 /*
- * Copyright 2017-present Facebook, Inc.
+ * Copyright (c) Facebook, Inc. and its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -299,7 +299,8 @@ static uint64_t test(std::string name, Exp exp, uint64_t base) {
           }
         };
         dur = run_once(pq, fn);
-      } break;
+        break;
+      }
       case FCNonBlock: {
         FCPQ pq;
         auto fn = [&](uint32_t tid) {
@@ -312,7 +313,8 @@ static uint64_t test(std::string name, Exp exp, uint64_t base) {
           }
         };
         dur = run_once(pq, fn);
-      } break;
+        break;
+      }
       case FCBlock: {
         FCPQ pq;
         auto fn = [&](uint32_t tid) {
@@ -325,7 +327,8 @@ static uint64_t test(std::string name, Exp exp, uint64_t base) {
           }
         };
         dur = run_once(pq, fn);
-      } break;
+        break;
+      }
       case FCTimed: {
         FCPQ pq;
         auto fn = [&](uint32_t tid) {
@@ -339,7 +342,8 @@ static uint64_t test(std::string name, Exp exp, uint64_t base) {
           }
         };
         dur = run_once(pq, fn);
-      } break;
+        break;
+      }
       default:
         CHECK(false);
     }

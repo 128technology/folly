@@ -1,11 +1,11 @@
 /*
- * Copyright 2018-present Facebook, Inc.
+ * Copyright (c) Facebook, Inc. and its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,6 +16,7 @@
 
 #pragma once
 
+#include <cassert>
 #include <string>
 
 #include <folly/Function.h>
@@ -69,18 +70,19 @@ namespace detail {
 /// Wrapper around the makeCompressionCounterHandler() extension point.
 class CompressionCounter {
  public:
-  CompressionCounter() {}
+  CompressionCounter() : initialized_(true) {}
   CompressionCounter(
       folly::io::CodecType codecType,
       folly::StringPiece codecName,
       folly::Optional<int> level,
       CompressionCounterKey key,
-      CompressionCounterType counterType) {
+      CompressionCounterType counterType)
+      : initialized_(false) {
     initialize_ = [=]() {
       return makeCompressionCounterHandler(
           codecType, codecName, level, key, counterType);
     };
-    DCHECK(!initialize_.hasAllocatedMemory());
+    assert(!initialize_.heapAllocatedMemory());
   }
 
   void operator+=(double sum) {
@@ -112,7 +114,7 @@ class CompressionCounter {
     }
   }
 
-  bool initialized_{false};
+  bool initialized_;
   folly::Function<folly::Function<void(double)>()> initialize_;
   folly::Function<void(double)> increment_;
 };

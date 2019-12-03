@@ -1,11 +1,11 @@
 /*
- * Copyright 2017-present Facebook, Inc.
+ * Copyright (c) Facebook, Inc. and its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -15,7 +15,11 @@
  */
 
 #include <folly/executors/CPUThreadPoolExecutor.h>
+
 #include <folly/executors/task_queue/PriorityLifoSemMPMCQueue.h>
+#include <folly/executors/task_queue/PriorityUnboundedBlockingQueue.h>
+#include <folly/executors/task_queue/UnboundedBlockingQueue.h>
+#include <folly/portability/GFlags.h>
 
 DEFINE_bool(
     dynamic_cputhreadpoolexecutor,
@@ -36,6 +40,7 @@ CPUThreadPoolExecutor::CPUThreadPoolExecutor(
           std::move(threadFactory)),
       taskQueue_(std::move(taskQueue)) {
   setNumThreads(numThreads);
+  registerThreadPoolExecutor(this);
 }
 
 CPUThreadPoolExecutor::CPUThreadPoolExecutor(
@@ -48,6 +53,7 @@ CPUThreadPoolExecutor::CPUThreadPoolExecutor(
           std::move(threadFactory)),
       taskQueue_(std::move(taskQueue)) {
   setNumThreads(numThreads.first);
+  registerThreadPoolExecutor(this);
 }
 
 CPUThreadPoolExecutor::CPUThreadPoolExecutor(
@@ -55,8 +61,7 @@ CPUThreadPoolExecutor::CPUThreadPoolExecutor(
     std::shared_ptr<ThreadFactory> threadFactory)
     : CPUThreadPoolExecutor(
           numThreads,
-          std::make_unique<LifoSemMPMCQueue<CPUTask>>(
-              CPUThreadPoolExecutor::kDefaultMaxQueueSize),
+          std::make_unique<UnboundedBlockingQueue<CPUTask>>(),
           std::move(threadFactory)) {}
 
 CPUThreadPoolExecutor::CPUThreadPoolExecutor(
@@ -64,8 +69,7 @@ CPUThreadPoolExecutor::CPUThreadPoolExecutor(
     std::shared_ptr<ThreadFactory> threadFactory)
     : CPUThreadPoolExecutor(
           numThreads,
-          std::make_unique<LifoSemMPMCQueue<CPUTask>>(
-              CPUThreadPoolExecutor::kDefaultMaxQueueSize),
+          std::make_unique<UnboundedBlockingQueue<CPUTask>>(),
           std::move(threadFactory)) {}
 
 CPUThreadPoolExecutor::CPUThreadPoolExecutor(size_t numThreads)
@@ -79,9 +83,8 @@ CPUThreadPoolExecutor::CPUThreadPoolExecutor(
     std::shared_ptr<ThreadFactory> threadFactory)
     : CPUThreadPoolExecutor(
           numThreads,
-          std::make_unique<PriorityLifoSemMPMCQueue<CPUTask>>(
-              numPriorities,
-              CPUThreadPoolExecutor::kDefaultMaxQueueSize),
+          std::make_unique<PriorityUnboundedBlockingQueue<CPUTask>>(
+              numPriorities),
           std::move(threadFactory)) {}
 
 CPUThreadPoolExecutor::CPUThreadPoolExecutor(
@@ -97,6 +100,7 @@ CPUThreadPoolExecutor::CPUThreadPoolExecutor(
           std::move(threadFactory)) {}
 
 CPUThreadPoolExecutor::~CPUThreadPoolExecutor() {
+  deregisterThreadPoolExecutor(this);
   stop();
   CHECK(threadsToStop_ == 0);
 }
@@ -213,7 +217,7 @@ void CPUThreadPoolExecutor::stopThreads(size_t n) {
 }
 
 // threadListLock_ is read (or write) locked.
-size_t CPUThreadPoolExecutor::getPendingTaskCountImpl() {
+size_t CPUThreadPoolExecutor::getPendingTaskCountImpl() const {
   return taskQueue_->size();
 }
 

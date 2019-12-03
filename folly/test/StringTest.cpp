@@ -1,11 +1,11 @@
 /*
- * Copyright 2012-present Facebook, Inc.
+ * Copyright (c) Facebook, Inc. and its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -19,12 +19,15 @@
 #endif
 
 #include <folly/String.h>
+#include <tuple>
 
 #include <cinttypes>
 #include <set>
 
 #include <boost/regex.hpp>
+#include <glog/logging.h>
 
+#include <folly/FBVector.h>
 #include <folly/container/Array.h>
 #include <folly/portability/GTest.h>
 #include <folly/test/TestUtils.h>
@@ -954,6 +957,24 @@ TEST(Split, fixed_convert) {
   // Enable verifying that a line only contains one field
   EXPECT_TRUE(folly::split(' ', "hello", a));
   EXPECT_FALSE(folly::split(' ', "hello world", a));
+
+  // Test cases with std::ignore.
+  EXPECT_TRUE(folly::split(':', "a:13:14.7:b", std::ignore, b, c, d));
+  EXPECT_EQ(13, b);
+  EXPECT_NEAR(14.7, c, 1e-10);
+  EXPECT_EQ("b", d);
+
+  EXPECT_TRUE(folly::split(':', "a:13:14.7:b", std::ignore, b, c, std::ignore));
+  EXPECT_EQ(13, b);
+  EXPECT_NEAR(14.7, c, 1e-10);
+
+  EXPECT_TRUE(folly::split<false>(':', "a:13:14.7:b", a, b, std::ignore));
+  EXPECT_EQ("a", a);
+  EXPECT_EQ(13, b);
+
+  EXPECT_FALSE(folly::split<false>(':', "a:13", std::ignore, b, std::ignore));
+  EXPECT_TRUE(folly::split<false>(':', ":13:", std::ignore, b, std::ignore));
+  EXPECT_EQ(13, b);
 }
 
 namespace my {
@@ -1235,6 +1256,26 @@ TEST(String, whitespace) {
   EXPECT_EQ("", rtrimWhitespace("\r "));
   EXPECT_EQ("", rtrimWhitespace("\n   "));
   EXPECT_EQ("", rtrimWhitespace("\r   "));
+}
+
+TEST(String, trim) {
+  auto removeA = [](const char c) { return 'a' == c; };
+  auto removeB = [](const char c) { return 'b' == c; };
+
+  // trim:
+  EXPECT_EQ("akavabanga", trim("akavabanga", removeB));
+  EXPECT_EQ("kavabang", trim("akavabanga", removeA));
+  EXPECT_EQ("kavabang", trim("aakavabangaa", removeA));
+
+  // ltrim:
+  EXPECT_EQ("akavabanga", ltrim("akavabanga", removeB));
+  EXPECT_EQ("kavabanga", ltrim("akavabanga", removeA));
+  EXPECT_EQ("kavabangaa", ltrim("aakavabangaa", removeA));
+
+  // rtrim:
+  EXPECT_EQ("akavabanga", rtrim("akavabanga", removeB));
+  EXPECT_EQ("akavabang", rtrim("akavabanga", removeA));
+  EXPECT_EQ("aakavabang", rtrim("aakavabangaa", removeA));
 }
 
 TEST(String, stripLeftMargin_really_empty) {

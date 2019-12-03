@@ -1,11 +1,11 @@
 /*
- * Copyright 2013-present Facebook, Inc.
+ * Copyright (c) Facebook, Inc. and its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -93,13 +93,13 @@ int File::release() noexcept {
   return released;
 }
 
-void File::swap(File& other) {
+void File::swap(File& other) noexcept {
   using std::swap;
   swap(fd_, other.fd_);
   swap(ownsFd_, other.ownsFd_);
 }
 
-void swap(File& a, File& b) {
+void swap(File& a, File& b) noexcept {
   a.swap(b);
 }
 

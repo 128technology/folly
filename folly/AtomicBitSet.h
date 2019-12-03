@@ -1,11 +1,11 @@
 /*
- * Copyright 2013-present Facebook, Inc.
+ * Copyright (c) Facebook, Inc. and its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -22,8 +22,6 @@
 #include <cstddef>
 #include <limits>
 
-#include <boost/noncopyable.hpp>
-
 #include <folly/Portability.h>
 
 namespace folly {
@@ -32,12 +30,15 @@ namespace folly {
  * An atomic bitset of fixed size (specified at compile time).
  */
 template <size_t N>
-class AtomicBitSet : private boost::noncopyable {
+class AtomicBitSet {
  public:
   /**
    * Construct an AtomicBitSet; all bits are initially false.
    */
   AtomicBitSet();
+
+  AtomicBitSet(const AtomicBitSet&) = delete;
+  AtomicBitSet& operator=(const AtomicBitSet&) = delete;
 
   /**
    * Set bit idx to true, using the given memory order. Returns the

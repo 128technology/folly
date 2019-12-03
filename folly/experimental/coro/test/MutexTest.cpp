@@ -1,11 +1,11 @@
 /*
- * Copyright 2017-present Facebook, Inc.
+ * Copyright (c) Facebook, Inc. and its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -19,14 +19,12 @@
 #if FOLLY_HAS_COROUTINES
 
 #include <folly/executors/CPUThreadPoolExecutor.h>
-#include <folly/executors/InlineExecutor.h>
 #include <folly/executors/ManualExecutor.h>
 #include <folly/experimental/coro/Baton.h>
 #include <folly/experimental/coro/BlockingWait.h>
-#include <folly/experimental/coro/Future.h>
 #include <folly/experimental/coro/Mutex.h>
-#include <folly/experimental/coro/Promise.h>
 #include <folly/experimental/coro/Task.h>
+#include <folly/experimental/coro/detail/InlineTask.h>
 #include <folly/portability/GTest.h>
 
 #include <mutex>
@@ -72,13 +70,15 @@ TEST(Mutex, LockAsync) {
     m.unlock();
   };
 
-  auto& inlineExecutor = InlineExecutor::instance();
+  ManualExecutor executor;
 
-  auto f1 = makeTask(b1).scheduleVia(&inlineExecutor);
+  auto f1 = makeTask(b1).scheduleOn(&executor).start();
+  executor.drain();
   CHECK_EQ(1, value);
   CHECK(!m.try_lock());
 
-  auto f2 = makeTask(b2).scheduleVia(&inlineExecutor);
+  auto f2 = makeTask(b2).scheduleOn(&executor).start();
+  executor.drain();
   CHECK_EQ(1, value);
 
   // This will resume f1 coroutine and let it release the
@@ -86,11 +86,13 @@ TEST(Mutex, LockAsync) {
   // at co_await m.lockAsync() which will then increment the value
   // before becoming blocked on
   b1.post();
+  executor.drain();
 
   CHECK_EQ(3, value);
   CHECK(!m.try_lock());
 
   b2.post();
+  executor.drain();
   CHECK_EQ(4, value);
   CHECK(m.try_lock());
 }
@@ -109,13 +111,15 @@ TEST(Mutex, ScopedLockAsync) {
     ++value;
   };
 
-  auto& inlineExecutor = InlineExecutor::instance();
+  ManualExecutor executor;
 
-  auto f1 = makeTask(b1).scheduleVia(&inlineExecutor);
+  auto f1 = makeTask(b1).scheduleOn(&executor).start();
+  executor.drain();
   CHECK_EQ(1, value);
   CHECK(!m.try_lock());
 
-  auto f2 = makeTask(b2).scheduleVia(&inlineExecutor);
+  auto f2 = makeTask(b2).scheduleOn(&executor).start();
+  executor.drain();
   CHECK_EQ(1, value);
 
   // This will resume f1 coroutine and let it release the
@@ -123,11 +127,13 @@ TEST(Mutex, ScopedLockAsync) {
   // at co_await m.lockAsync() which will then increment the value
   // before becoming blocked on b2.
   b1.post();
+  executor.drain();
 
   CHECK_EQ(3, value);
   CHECK(!m.try_lock());
 
   b2.post();
+  executor.drain();
   CHECK_EQ(4, value);
   CHECK(m.try_lock());
 }
@@ -146,13 +152,13 @@ TEST(Mutex, ThreadSafety) {
     }
   };
 
-  auto f1 = makeTask().scheduleVia(&threadPool);
-  auto f2 = makeTask().scheduleVia(&threadPool);
-  auto f3 = makeTask().scheduleVia(&threadPool);
+  auto f1 = makeTask().scheduleOn(&threadPool).start();
+  auto f2 = makeTask().scheduleOn(&threadPool).start();
+  auto f3 = makeTask().scheduleOn(&threadPool).start();
 
-  coro::blockingWait(f1);
-  coro::blockingWait(f2);
-  coro::blockingWait(f3);
+  std::move(f1).get();
+  std::move(f2).get();
+  std::move(f3).get();
 
   CHECK_EQ(30'000, value);
 }

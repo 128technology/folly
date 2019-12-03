@@ -1,11 +1,11 @@
 /*
- * Copyright 2014-present Facebook, Inc.
+ * Copyright (c) Facebook, Inc. and its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -31,11 +31,9 @@
 #include <folly/portability/Sockets.h>
 #include <folly/portability/Unistd.h>
 
-#include <errno.h>
-#include <string.h>
 #include <sys/types.h>
-
-namespace fsp = folly::portability::sockets;
+#include <cerrno>
+#include <cstring>
 
 namespace folly {
 
@@ -58,27 +56,6 @@ const uint32_t AsyncServerSocket::kDefaultMaxAcceptAtOnce;
 const uint32_t AsyncServerSocket::kDefaultCallbackAcceptAtOnce;
 const uint32_t AsyncServerSocket::kDefaultMaxMessagesInQueue;
 
-int setCloseOnExec(int fd, int value) {
-  // Read the current flags
-  int old_flags = fcntl(fd, F_GETFD, 0);
-
-  // If reading the flags failed, return error indication now
-  if (old_flags < 0) {
-    return -1;
-  }
-
-  // Set just the flag we want to set
-  int new_flags;
-  if (value != 0) {
-    new_flags = old_flags | FD_CLOEXEC;
-  } else {
-    new_flags = old_flags & ~FD_CLOEXEC;
-  }
-
-  // Store modified flag word in the descriptor
-  return fcntl(fd, F_SETFD, new_flags);
-}
-
 void AsyncServerSocket::RemoteAcceptor::start(
     EventBase* eventBase,
     uint32_t maxAtOnce,
@@ -86,29 +63,19 @@ void AsyncServerSocket::RemoteAcceptor::start(
   setMaxReadAtOnce(maxAtOnce);
   queue_.setMaxQueueSize(maxInQueue);
 
-  if (!eventBase->runInEventBaseThread([=]() {
-        callback_->acceptStarted();
-        this->startConsuming(eventBase, &queue_);
-      })) {
-    throw std::invalid_argument(
-        "unable to start waiting on accept "
-        "notification queue in the specified "
-        "EventBase thread");
-  }
+  eventBase->runInEventBaseThread([=]() {
+    callback_->acceptStarted();
+    this->startConsuming(eventBase, &queue_);
+  });
 }
 
 void AsyncServerSocket::RemoteAcceptor::stop(
     EventBase* eventBase,
     AcceptCallback* callback) {
-  if (!eventBase->runInEventBaseThread([=]() {
-        callback->acceptStopped();
-        delete this;
-      })) {
-    throw std::invalid_argument(
-        "unable to start waiting on accept "
-        "notification queue in the specified "
-        "EventBase thread");
-  }
+  eventBase->runInEventBaseThread([=]() {
+    callback->acceptStopped();
+    delete this;
+  });
 }
 
 void AsyncServerSocket::RemoteAcceptor::messageAvailable(
@@ -245,7 +212,7 @@ int AsyncServerSocket::stopAccepting(int shutdownFlags) {
   // removeAcceptCallback().
   std::vector<CallbackInfo> callbacksCopy;
   callbacks_.swap(callbacksCopy);
-  for (std::vector<CallbackInfo>::iterator it = callbacksCopy.begin();
+  for (auto it = callbacksCopy.begin();
        it != callbacksCopy.end();
        ++it) {
     // consumer may not be set if we are running in primary event base
@@ -292,7 +259,8 @@ void AsyncServerSocket::detachEventBase() {
   }
 }
 
-void AsyncServerSocket::useExistingSockets(const std::vector<int>& fds) {
+void AsyncServerSocket::useExistingSockets(
+    const std::vector<NetworkSocket>& fds) {
   if (eventBase_) {
     eventBase_->dcheckIsInEventBaseThread();
   }
@@ -314,7 +282,7 @@ void AsyncServerSocket::useExistingSockets(const std::vector<int>& fds) {
 #if __linux__
     if (noTransparentTls_) {
       // Ignore return value, errors are ok
-      setsockopt(fd, SOL_SOCKET, SO_NO_TRANSPARENT_TLS, nullptr, 0);
+      netops::setsockopt(fd, SOL_SOCKET, SO_NO_TRANSPARENT_TLS, nullptr, 0);
     }
 #endif
 
@@ -324,30 +292,35 @@ void AsyncServerSocket::useExistingSockets(const std::vector<int>& fds) {
   }
 }
 
-void AsyncServerSocket::useExistingSocket(int fd) {
+void AsyncServerSocket::useExistingSocket(NetworkSocket fd) {
   useExistingSockets({fd});
 }
 
 void AsyncServerSocket::bindSocket(
-    int fd,
+    NetworkSocket fd,
     const SocketAddress& address,
     bool isExistingSocket) {
   sockaddr_storage addrStorage;
   address.getAddress(&addrStorage);
-  sockaddr* saddr = reinterpret_cast<sockaddr*>(&addrStorage);
+  auto saddr = reinterpret_cast<sockaddr*>(&addrStorage);
 
-  if (fsp::bind(fd, saddr, address.getActualSize()) != 0) {
-    if (!isExistingSocket) {
-      closeNoInt(fd);
+  if (netops::bind(fd, saddr, address.getActualSize()) != 0) {
+    if (errno != EINPROGRESS) {
+      // Get a copy of errno so that it is not overwritten by subsequent calls.
+      auto errnoCopy = errno;
+      if (!isExistingSocket) {
+        closeNoInt(fd);
+      }
+      folly::throwSystemError(
+          errnoCopy,
+          "failed to bind to async server socket: " + address.describe());
     }
-    folly::throwSystemError(
-        errno, "failed to bind to async server socket: " + address.describe());
   }
 
 #if __linux__
   if (noTransparentTls_) {
     // Ignore return value, errors are ok
-    setsockopt(fd, SOL_SOCKET, SO_NO_TRANSPARENT_TLS, nullptr, 0);
+    netops::setsockopt(fd, SOL_SOCKET, SO_NO_TRANSPARENT_TLS, nullptr, 0);
   }
 #endif
 
@@ -359,9 +332,9 @@ void AsyncServerSocket::bindSocket(
 
 bool AsyncServerSocket::setZeroCopy(bool enable) {
   if (msgErrQueueSupported) {
-    int fd = getSocket();
     int val = enable ? 1 : 0;
-    int ret = setsockopt(fd, SOL_SOCKET, SO_ZEROCOPY, &val, sizeof(val));
+    int ret = netops::setsockopt(
+        getNetworkSocket(), SOL_SOCKET, SO_ZEROCOPY, &val, sizeof(val));
 
     return (0 == ret);
   }
@@ -378,7 +351,7 @@ void AsyncServerSocket::bind(const SocketAddress& address) {
   // However, in the normal case we need to create a new socket now.
   // Don't set socket_ yet, so that socket_ will remain uninitialized if an
   // error occurs.
-  int fd;
+  NetworkSocket fd;
   if (sockets_.size() == 0) {
     fd = createSocket(address.getFamily());
   } else if (sockets_.size() == 1) {
@@ -401,15 +374,13 @@ void AsyncServerSocket::bind(
   if (ipAddresses.empty()) {
     throw std::invalid_argument("No ip addresses were provided");
   }
-  if (!sockets_.empty()) {
-    throw std::invalid_argument(
-        "Cannot call bind on a AsyncServerSocket "
-        "that already has a socket.");
+  if (eventBase_) {
+    eventBase_->dcheckIsInEventBaseThread();
   }
 
   for (const IPAddress& ipAddress : ipAddresses) {
     SocketAddress address(ipAddress.toFullyQualified(), port);
-    int fd = createSocket(address.getFamily());
+    auto fd = createSocket(address.getFamily());
 
     bindSocket(fd, address, false);
   }
@@ -443,12 +414,12 @@ void AsyncServerSocket::bind(uint16_t port) {
   };
 
   auto setupAddress = [&](struct addrinfo* res) {
-    int s = fsp::socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+    auto s = netops::socket(res->ai_family, res->ai_socktype, res->ai_protocol);
     // IPv6/IPv4 may not be supported by the kernel
-    if (s < 0 && errno == EAFNOSUPPORT) {
+    if (s == NetworkSocket() && errno == EAFNOSUPPORT) {
       return;
     }
-    CHECK_GE(s, 0);
+    CHECK_NE(s, NetworkSocket());
 
     try {
       setupSocket(s, res->ai_family);
@@ -461,11 +432,12 @@ void AsyncServerSocket::bind(uint16_t port) {
       int v6only = 1;
       CHECK(
           0 ==
-          setsockopt(s, IPPROTO_IPV6, IPV6_V6ONLY, &v6only, sizeof(v6only)));
+          netops::setsockopt(
+              s, IPPROTO_IPV6, IPV6_V6ONLY, &v6only, sizeof(v6only)));
     }
 
     // Bind to the socket
-    if (fsp::bind(s, res->ai_addr, socklen_t(res->ai_addrlen)) != 0) {
+    if (netops::bind(s, res->ai_addr, socklen_t(res->ai_addrlen)) != 0) {
       folly::throwSystemError(
           errno,
           "failed to bind to async server socket for port ",
@@ -477,7 +449,7 @@ void AsyncServerSocket::bind(uint16_t port) {
 #if __linux__
     if (noTransparentTls_) {
       // Ignore return value, errors are ok
-      setsockopt(s, SOL_SOCKET, SO_NO_TRANSPARENT_TLS, nullptr, 0);
+      netops::setsockopt(s, SOL_SOCKET, SO_NO_TRANSPARENT_TLS, nullptr, 0);
     }
 #endif
 
@@ -524,7 +496,7 @@ void AsyncServerSocket::bind(uint16_t port) {
       // were opened, then restarting from scratch.
       if (port == 0 && !sockets_.empty() && tries != kNumTries) {
         for (const auto& socket : sockets_) {
-          if (socket.socket_ <= 0) {
+          if (socket.socket_ == NetworkSocket()) {
             continue;
           } else if (
               const auto shutdownSocketSet = wShutdownSocketSet_.lock()) {
@@ -558,7 +530,7 @@ void AsyncServerSocket::listen(int backlog) {
 
   // Start listening
   for (auto& handler : sockets_) {
-    if (fsp::listen(handler.socket_, backlog) == -1) {
+    if (netops::listen(handler.socket_, backlog) == -1) {
       folly::throwSystemError(errno, "failed to listen on async server socket");
     }
   }
@@ -644,7 +616,7 @@ void AsyncServerSocket::removeAcceptCallback(
   // We just do a simple linear search; we don't expect removeAcceptCallback()
   // to be called frequently, and we expect there to only be a small number of
   // callbacks anyway.
-  std::vector<CallbackInfo>::iterator it = callbacks_.begin();
+  auto it = callbacks_.begin();
   uint32_t n = 0;
   while (true) {
     if (it == callbacks_.end()) {
@@ -735,9 +707,9 @@ void AsyncServerSocket::pauseAccepting() {
   }
 }
 
-int AsyncServerSocket::createSocket(int family) {
-  int fd = fsp::socket(family, SOCK_STREAM, 0);
-  if (fd == -1) {
+NetworkSocket AsyncServerSocket::createSocket(int family) {
+  auto fd = netops::socket(family, SOCK_STREAM, 0);
+  if (fd == NetworkSocket()) {
     folly::throwSystemError(errno, "error creating async server socket");
   }
 
@@ -762,12 +734,12 @@ void AsyncServerSocket::setTosReflect(bool enable) {
   }
 
   for (auto& handler : sockets_) {
-    if (handler.socket_ < 0) {
+    if (handler.socket_ == NetworkSocket()) {
       continue;
     }
 
     int val = (enable) ? 1 : 0;
-    int ret = setsockopt(
+    int ret = netops::setsockopt(
         handler.socket_, IPPROTO_TCP, TCP_SAVE_SYN, &val, sizeof(val));
 
     if (ret == 0) {
@@ -779,15 +751,16 @@ void AsyncServerSocket::setTosReflect(bool enable) {
   tosReflect_ = true;
 }
 
-void AsyncServerSocket::setupSocket(int fd, int family) {
+void AsyncServerSocket::setupSocket(NetworkSocket fd, int family) {
   // Put the socket in non-blocking mode
-  if (fcntl(fd, F_SETFL, O_NONBLOCK) != 0) {
+  if (netops::set_socket_non_blocking(fd) != 0) {
     folly::throwSystemError(errno, "failed to put socket in non-blocking mode");
   }
 
   // Set reuseaddr to avoid 2MSL delay on server restart
   int one = 1;
-  if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one)) != 0) {
+  if (netops::setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one)) !=
+      0) {
     // This isn't a fatal error; just log an error message and continue
     LOG(ERROR) << "failed to set SO_REUSEADDR on async server socket " << errno;
   }
@@ -795,7 +768,8 @@ void AsyncServerSocket::setupSocket(int fd, int family) {
   // Set reuseport to support multiple accept threads
   int zero = 0;
   if (reusePortEnabled_ &&
-      setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &one, sizeof(int)) != 0) {
+      netops::setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &one, sizeof(int)) !=
+          0) {
     LOG(ERROR) << "failed to set SO_REUSEPORT on async server socket "
                << errnoStr(errno);
 #ifdef WIN32
@@ -809,7 +783,7 @@ void AsyncServerSocket::setupSocket(int fd, int family) {
   }
 
   // Set keepalive as desired
-  if (setsockopt(
+  if (netops::setsockopt(
           fd,
           SOL_SOCKET,
           SO_KEEPALIVE,
@@ -820,7 +794,7 @@ void AsyncServerSocket::setupSocket(int fd, int family) {
   }
 
   // Setup FD_CLOEXEC flag
-  if (closeOnExec_ && (-1 == folly::setCloseOnExec(fd, closeOnExec_))) {
+  if (closeOnExec_ && (-1 == netops::set_socket_close_on_exec(fd))) {
     LOG(ERROR) << "failed to set FD_CLOEXEC on async server socket: "
                << errnoStr(errno);
   }
@@ -829,7 +803,8 @@ void AsyncServerSocket::setupSocket(int fd, int family) {
   // See http://lists.danga.com/pipermail/memcached/2005-March/001240.html
 #ifndef TCP_NOPUSH
   if (family != AF_UNIX) {
-    if (setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one)) != 0) {
+    if (netops::setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one)) !=
+        0) {
       // This isn't a fatal error; just log an error message and continue
       LOG(ERROR) << "failed to set TCP_NODELAY on async server socket: "
                  << errnoStr(errno);
@@ -854,7 +829,7 @@ void AsyncServerSocket::setupSocket(int fd, int family) {
 
 void AsyncServerSocket::handlerReady(
     uint16_t /* events */,
-    int fd,
+    NetworkSocket fd,
     sa_family_t addressFamily) noexcept {
   assert(!callbacks_.empty());
   DestructorGuard dg(this);
@@ -864,9 +839,9 @@ void AsyncServerSocket::handlerReady(
   for (uint32_t n = 0; n < maxAcceptAtOnce_; ++n) {
     SocketAddress address;
 
-    sockaddr_storage addrStorage;
+    sockaddr_storage addrStorage = {};
     socklen_t addrLen = sizeof(addrStorage);
-    sockaddr* saddr = reinterpret_cast<sockaddr*>(&addrStorage);
+    auto saddr = reinterpret_cast<sockaddr*>(&addrStorage);
 
     // In some cases, accept() doesn't seem to update these correctly.
     saddr->sa_family = addressFamily;
@@ -875,40 +850,46 @@ void AsyncServerSocket::handlerReady(
     }
 
     // Accept a new client socket
-#ifdef SOCK_NONBLOCK
-    int clientSocket = accept4(fd, saddr, &addrLen, SOCK_NONBLOCK);
+#if FOLLY_HAVE_ACCEPT4
+    auto clientSocket = NetworkSocket::fromFd(
+        accept4(fd.toFd(), saddr, &addrLen, SOCK_NONBLOCK));
 #else
-    int clientSocket = accept(fd, saddr, &addrLen);
+    auto clientSocket = netops::accept(fd, saddr, &addrLen);
 #endif
 
     address.setFromSockaddr(saddr, addrLen);
 
-    if (clientSocket >= 0 && connectionEventCallback_) {
+    if (clientSocket != NetworkSocket() && connectionEventCallback_) {
       connectionEventCallback_->onConnectionAccepted(clientSocket, address);
     }
 
     // Connection accepted, get the SYN packet from the client if
     // TOS reflect is enabled
-    if (kIsLinux && clientSocket >= 0 && tosReflect_) {
+    if (kIsLinux && clientSocket != NetworkSocket() && tosReflect_) {
       std::array<uint32_t, 64> buffer;
       socklen_t len = sizeof(buffer);
-      int ret =
-          getsockopt(clientSocket, IPPROTO_TCP, TCP_SAVED_SYN, &buffer, &len);
+      int ret = netops::getsockopt(
+          clientSocket, IPPROTO_TCP, TCP_SAVED_SYN, &buffer, &len);
 
       if (ret == 0) {
         uint32_t tosWord = folly::Endian::big(buffer[0]);
         if (addressFamily == AF_INET6) {
           tosWord = (tosWord & 0x0FC00000) >> 20;
-          ret = setsockopt(
-              clientSocket,
-              IPPROTO_IPV6,
-              IPV6_TCLASS,
-              &tosWord,
-              sizeof(tosWord));
+          // Set the TOS on the return socket only if it is non-zero
+          if (tosWord) {
+            ret = netops::setsockopt(
+                clientSocket,
+                IPPROTO_IPV6,
+                IPV6_TCLASS,
+                &tosWord,
+                sizeof(tosWord));
+          }
         } else if (addressFamily == AF_INET) {
           tosWord = (tosWord & 0x00FC0000) >> 16;
-          ret = setsockopt(
-              clientSocket, IPPROTO_IP, IP_TOS, &tosWord, sizeof(tosWord));
+          if (tosWord) {
+            ret = netops::setsockopt(
+                clientSocket, IPPROTO_IP, IP_TOS, &tosWord, sizeof(tosWord));
+          }
         }
 
         if (ret != 0) {
@@ -934,7 +915,7 @@ void AsyncServerSocket::handlerReady(
         acceptRate_ = 1;
       } else if (rand() > acceptRate_ * RAND_MAX) {
         ++numDroppedConnections_;
-        if (clientSocket >= 0) {
+        if (clientSocket != NetworkSocket()) {
           closeNoInt(clientSocket);
           if (connectionEventCallback_) {
             connectionEventCallback_->onConnectionDropped(
@@ -945,7 +926,7 @@ void AsyncServerSocket::handlerReady(
       }
     }
 
-    if (clientSocket < 0) {
+    if (clientSocket == NetworkSocket()) {
       if (errno == EAGAIN) {
         // No more sockets to accept right now.
         // Check for this code first, since it's the most common.
@@ -969,9 +950,9 @@ void AsyncServerSocket::handlerReady(
       return;
     }
 
-#ifndef SOCK_NONBLOCK
+#if !FOLLY_HAVE_ACCEPT4
     // Explicitly set the new connection to non-blocking mode
-    if (fcntl(clientSocket, F_SETFL, O_NONBLOCK) != 0) {
+    if (netops::set_socket_non_blocking(clientSocket) != 0) {
       closeNoInt(clientSocket);
       dispatchError(
           "failed to set accepted socket to non-blocking mode", errno);
@@ -992,7 +973,9 @@ void AsyncServerSocket::handlerReady(
   }
 }
 
-void AsyncServerSocket::dispatchSocket(int socket, SocketAddress&& address) {
+void AsyncServerSocket::dispatchSocket(
+    NetworkSocket socket,
+    SocketAddress&& address) {
   uint32_t startingIndex = callbackIndex_;
 
   // Short circuit if the callback is in the primary EventBase thread

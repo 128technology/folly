@@ -1,11 +1,11 @@
 /*
- * Copyright 2014-present Facebook, Inc.
+ * Copyright (c) Facebook, Inc. and its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 #include <folly/fibers/Fiber.h>
 
 #include <glog/logging.h>
@@ -40,8 +41,8 @@ std::thread::id localThreadId() {
 static size_t nonMagicInBytes(unsigned char* stackLimit, size_t stackSize) {
   CHECK_EQ(reinterpret_cast<intptr_t>(stackLimit) % sizeof(uint64_t), 0u);
   CHECK_EQ(stackSize % sizeof(uint64_t), 0u);
-  uint64_t* begin = reinterpret_cast<uint64_t*>(stackLimit);
-  uint64_t* end = reinterpret_cast<uint64_t*>(stackLimit + stackSize);
+  auto begin = reinterpret_cast<uint64_t*>(stackLimit);
+  auto end = reinterpret_cast<uint64_t*>(stackLimit + stackSize);
 
   auto firstNonMagic = std::find_if(
       begin, end, [](uint64_t val) { return val != kMagic8Bytes; });
@@ -174,7 +175,10 @@ void Fiber::preempt(State state) {
     DCHECK_EQ(fiberManager_.activeFiber_, this);
     DCHECK_EQ(state_, RUNNING);
     DCHECK_NE(state, RUNNING);
-    DCHECK(!std::current_exception());
+    if (state != AWAITING_IMMEDIATE) {
+      CHECK(fiberManager_.currentException_ == std::current_exception());
+      CHECK_EQ(fiberManager_.numUncaughtExceptions_, uncaught_exceptions());
+    }
 
     state_ = state;
 

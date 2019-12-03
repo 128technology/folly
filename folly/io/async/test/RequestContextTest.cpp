@@ -1,11 +1,11 @@
 /*
- * Copyright 2013-present Facebook, Inc.
+ * Copyright (c) Facebook, Inc. and its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -19,32 +19,12 @@
 #include <folly/Memory.h>
 #include <folly/io/async/EventBase.h>
 #include <folly/io/async/Request.h>
+#include <folly/io/async/test/RequestContextHelper.h>
 #include <folly/portability/GTest.h>
 
 using namespace folly;
 
 RequestToken testtoken("test");
-
-class TestData : public RequestData {
- public:
-  explicit TestData(int data) : data_(data) {}
-  ~TestData() override {}
-
-  bool hasCallback() override {
-    return true;
-  }
-
-  void onSet() override {
-    set_++;
-  }
-
-  void onUnset() override {
-    unset_++;
-  }
-
-  int set_ = 0, unset_ = 0;
-  int data_;
-};
 
 class RequestContextTest : public ::testing::Test {
  protected:

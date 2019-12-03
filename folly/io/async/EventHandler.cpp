@@ -1,11 +1,11 @@
 /*
- * Copyright 2014-present Facebook, Inc.
+ * Copyright (c) Facebook, Inc. and its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -18,12 +18,12 @@
 #include <folly/String.h>
 #include <folly/io/async/EventBase.h>
 
-#include <assert.h>
+#include <cassert>
 
 namespace folly {
 
-EventHandler::EventHandler(EventBase* eventBase, int fd) {
-  folly_event_set(&event_, fd, 0, &EventHandler::libeventCallback, this);
+EventHandler::EventHandler(EventBase* eventBase, NetworkSocket fd) {
+  event_set(&event_, fd.data, 0, &EventHandler::libeventCallback, this);
   if (eventBase != nullptr) {
     setEventBase(eventBase);
   } else {
@@ -121,17 +121,17 @@ void EventHandler::detachEventBase() {
   event_.ev_base = nullptr;
 }
 
-void EventHandler::changeHandlerFD(int fd) {
+void EventHandler::changeHandlerFD(NetworkSocket fd) {
   ensureNotRegistered(__func__);
   // event_set() resets event_base.ev_base, so manually restore it afterwards
   struct event_base* evb = event_.ev_base;
-  folly_event_set(&event_, fd, 0, &EventHandler::libeventCallback, this);
+  event_set(&event_, fd.data, 0, &EventHandler::libeventCallback, this);
   event_.ev_base = evb; // don't use event_base_set(), since evb may be nullptr
 }
 
-void EventHandler::initHandler(EventBase* eventBase, int fd) {
+void EventHandler::initHandler(EventBase* eventBase, NetworkSocket fd) {
   ensureNotRegistered(__func__);
-  folly_event_set(&event_, fd, 0, &EventHandler::libeventCallback, this);
+  event_set(&event_, fd.data, 0, &EventHandler::libeventCallback, this);
   setEventBase(eventBase);
 }
 
@@ -146,7 +146,7 @@ void EventHandler::ensureNotRegistered(const char* fn) {
 }
 
 void EventHandler::libeventCallback(libevent_fd_t fd, short events, void* arg) {
-  EventHandler* handler = reinterpret_cast<EventHandler*>(arg);
+  auto handler = reinterpret_cast<EventHandler*>(arg);
   assert(fd == handler->event_.ev_fd);
   (void)fd; // prevent unused variable warnings
 

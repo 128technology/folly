@@ -1,11 +1,11 @@
 /*
- * Copyright 2017-present Facebook, Inc.
+ * Copyright (c) Facebook, Inc. and its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -19,6 +19,12 @@
 #include <glog/logging.h>
 
 #include <folly/detail/MemoryIdler.h>
+#include <folly/portability/GFlags.h>
+
+DEFINE_bool(
+    dynamic_iothreadpoolexecutor,
+    true,
+    "IOThreadPoolExecutor will dynamically create threads");
 
 namespace folly {
 
@@ -66,13 +72,19 @@ IOThreadPoolExecutor::IOThreadPoolExecutor(
     std::shared_ptr<ThreadFactory> threadFactory,
     EventBaseManager* ebm,
     bool waitForAll)
-    : ThreadPoolExecutor(numThreads, 0, std::move(threadFactory), waitForAll),
+    : ThreadPoolExecutor(
+          numThreads,
+          FLAGS_dynamic_iothreadpoolexecutor ? 0 : numThreads,
+          std::move(threadFactory),
+          waitForAll),
       nextThread_(0),
       eventBaseManager_(ebm) {
   setNumThreads(numThreads);
+  registerThreadPoolExecutor(this);
 }
 
 IOThreadPoolExecutor::~IOThreadPoolExecutor() {
+  deregisterThreadPoolExecutor(this);
   stop();
 }
 
@@ -98,10 +110,7 @@ void IOThreadPoolExecutor::add(
   };
 
   ioThread->pendingTasks++;
-  if (!ioThread->eventBase->runInEventBaseThread(std::move(wrappedFunc))) {
-    ioThread->pendingTasks--;
-    throw std::runtime_error("Unable to run func in event base thread");
-  }
+  ioThread->eventBase->runInEventBaseThread(std::move(wrappedFunc));
 }
 
 std::shared_ptr<IOThreadPoolExecutor::IOThread>
@@ -118,6 +127,13 @@ IOThreadPoolExecutor::pickThread() {
   }
   auto n = ths.size();
   if (n == 0) {
+    // XXX I think the only way this can happen is if somebody calls
+    // getEventBase (1) from one of the executor's threads while the executor
+    // is stopping or getting downsized to zero or (2) from outside the executor
+    // when it has no threads. In the first case, it's not obvious what the
+    // correct behavior should be-- do we really want to return ourselves even
+    // though we're about to exit? (The comment above seems to imply no.) In
+    // the second case, `!me` so we'll crash anyway.
     return me;
   }
   auto thread = ths[nextThread_.fetch_add(1, std::memory_order_relaxed) % n];
@@ -127,6 +143,9 @@ IOThreadPoolExecutor::pickThread() {
 EventBase* IOThreadPoolExecutor::getEventBase() {
   ensureActiveThreads();
   SharedMutex::ReadHolder r{&threadListLock_};
+  if (threadList_.get().empty()) {
+    throw std::runtime_error("No threads available");
+  }
   return pickThread()->eventBase;
 }
 
@@ -205,7 +224,7 @@ void IOThreadPoolExecutor::stopThreads(size_t n) {
 }
 
 // threadListLock_ is readlocked
-size_t IOThreadPoolExecutor::getPendingTaskCountImpl() {
+size_t IOThreadPoolExecutor::getPendingTaskCountImpl() const {
   size_t count = 0;
   for (const auto& thread : threadList_.get()) {
     auto ioThread = std::static_pointer_cast<IOThread>(thread);

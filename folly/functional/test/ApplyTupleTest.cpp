@@ -1,11 +1,11 @@
 /*
- * Copyright 2012-present Facebook, Inc.
+ * Copyright (c) Facebook, Inc. and its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -22,6 +22,7 @@
 
 #include <array>
 #include <memory>
+#include <utility>
 
 namespace {
 
@@ -80,7 +81,6 @@ struct GuardObjBase {
   GuardObjBase(GuardObjBase const&) = delete;
   GuardObjBase& operator=(GuardObjBase const&) = delete;
 };
-typedef GuardObjBase const& Guard;
 
 template <class F, class Tuple>
 struct GuardObj : GuardObjBase {
@@ -429,24 +429,23 @@ TEST(MakeFromTupleTest, make_from_tuple) {
 }
 
 TEST(MakeIndexSequenceFromTuple, Basic) {
-  using folly::index_sequence;
   using folly::index_sequence_for_tuple;
   using OneElementTuple = std::tuple<int>;
   using TwoElementTuple = std::tuple<int>;
 
   EXPECT_TRUE((std::is_same<
                index_sequence_for_tuple<OneElementTuple>,
-               index_sequence<0>>::value));
+               std::index_sequence<0>>::value));
   EXPECT_TRUE((std::is_same<
                index_sequence_for_tuple<const OneElementTuple>,
-               index_sequence<0>>::value));
+               std::index_sequence<0>>::value));
 
   EXPECT_TRUE((std::is_same<
                index_sequence_for_tuple<TwoElementTuple>,
-               index_sequence<0>>::value));
+               std::index_sequence<0>>::value));
   EXPECT_TRUE((std::is_same<
                index_sequence_for_tuple<const TwoElementTuple>,
-               index_sequence<0>>::value));
+               std::index_sequence<0>>::value));
 }
 
 TEST(ApplyResult, Basic) {
@@ -499,9 +498,8 @@ TEST(IsNothrowApplicable, Basic) {
         (folly::is_nothrow_applicable<decltype(f), std::tuple<int>>{}));
   }
   {
-    auto f = folly::overload([](int) noexcept {}, [](double) -> double {
-      return {};
-    });
+    auto f = folly::overload(
+        [](int) noexcept {}, [](double) -> double { return {}; });
     EXPECT_FALSE(
         (folly::is_nothrow_applicable<decltype(f), std::tuple<double>>{}));
     EXPECT_TRUE((folly::is_nothrow_applicable<decltype(f), std::tuple<int>>{}));
@@ -520,9 +518,8 @@ TEST(IsApplicableR, Basic) {
         (folly::is_applicable_r<double, decltype(f), std::tuple<int>>{}));
   }
   {
-    auto f = folly::overload([](int) noexcept {}, [](double) -> double {
-      return {};
-    });
+    auto f = folly::overload(
+        [](int) noexcept {}, [](double) -> double { return {}; });
     EXPECT_TRUE(
         (folly::is_applicable_r<float, decltype(f), std::tuple<double>>{}));
     EXPECT_TRUE((folly::is_applicable_r<void, decltype(f), std::tuple<int>>{}));
@@ -545,9 +542,8 @@ TEST(IsNothrowApplicableR, Basic) {
              is_nothrow_applicable_r<double, decltype(f), std::tuple<int>>{}));
   }
   {
-    auto f = folly::overload([](int) noexcept {}, [](double) -> double {
-      return {};
-    });
+    auto f = folly::overload(
+        [](int) noexcept {}, [](double) -> double { return {}; });
     EXPECT_FALSE((
         folly::
             is_nothrow_applicable_r<float, decltype(f), std::tuple<double>>{}));
@@ -578,10 +574,18 @@ TEST(ForwardTuple, Basic) {
                decltype(folly::forward_tuple(std::move(tuple))),
                std::tuple<int&&, double&&>>::value));
   EXPECT_EQ(folly::forward_tuple(std::move(tuple)), tuple);
+#if defined(__GLIBCXX__) && (!defined(_GLIBCXX_RELEASE) || _GLIBCXX_RELEASE < 8)
+  constexpr bool before_lwg2485 = true;
+#else
+  constexpr bool before_lwg2485 = false;
+#endif
   EXPECT_TRUE(
       (std::is_same<
           decltype(folly::forward_tuple(std::move(folly::as_const(tuple)))),
-          std::tuple<const int&, const double&>>::value));
+          std::conditional_t<
+              before_lwg2485,
+              std::tuple<const int&, const double&>,
+              std::tuple<const int&&, const double&&>>>::value));
   EXPECT_EQ(folly::forward_tuple(std::move(folly::as_const(tuple))), tuple);
 
   auto integer = 1;

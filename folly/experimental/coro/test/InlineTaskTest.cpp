@@ -1,11 +1,11 @@
 /*
- * Copyright 2017-present Facebook, Inc.
+ * Copyright (c) Facebook, Inc. and its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -18,7 +18,6 @@
 
 #if FOLLY_HAS_COROUTINES
 
-#include <folly/experimental/coro/Baton.h>
 #include <folly/experimental/coro/BlockingWait.h>
 #include <folly/experimental/coro/detail/InlineTask.h>
 #include <folly/portability/GTest.h>
@@ -184,10 +183,7 @@ TEST(InlineTask, TaskOfMoveOnlyType) {
 TEST(InlineTask, MoveOnlyTypeNRVO) {
   auto f = []() -> InlineTask<MoveOnlyType> {
     MoveOnlyType x{10};
-
-    // Shouldn't need std::move(x) here, according to
-    // N4760 15.8.3(3) Copy/move elision
-    co_return std::move(x);
+    co_return x;
   };
 
   auto x = folly::coro::blockingWait(f());
@@ -206,7 +202,7 @@ struct MyException : std::exception {};
 
 TEST(InlineTask, ExceptionsPropagateFromVoidTask) {
   auto f = []() -> InlineTask<void> {
-    co_await folly::coro::Baton{true};
+    co_await std::experimental::suspend_never{};
     throw MyException{};
   };
   EXPECT_THROW(folly::coro::blockingWait(f()), MyException);
@@ -214,7 +210,7 @@ TEST(InlineTask, ExceptionsPropagateFromVoidTask) {
 
 TEST(InlineTask, ExceptionsPropagateFromValueTask) {
   auto f = []() -> InlineTask<int> {
-    co_await folly::coro::Baton{true};
+    co_await std::experimental::suspend_never{};
     throw MyException{};
   };
   EXPECT_THROW(folly::coro::blockingWait(f()), MyException);
@@ -222,7 +218,7 @@ TEST(InlineTask, ExceptionsPropagateFromValueTask) {
 
 TEST(InlineTask, ExceptionsPropagateFromRefTask) {
   auto f = []() -> InlineTask<int&> {
-    co_await folly::coro::Baton{true};
+    co_await std::experimental::suspend_never{};
     throw MyException{};
   };
   EXPECT_THROW(folly::coro::blockingWait(f()), MyException);

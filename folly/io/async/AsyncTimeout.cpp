@@ -1,11 +1,11 @@
 /*
- * Copyright 2014-present Facebook, Inc.
+ * Copyright (c) Facebook, Inc. and its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -18,24 +18,33 @@
 #include <folly/io/async/EventBase.h>
 #include <folly/io/async/EventUtil.h>
 #include <folly/io/async/Request.h>
+#include <folly/net/NetworkSocket.h>
 
-#include <assert.h>
 #include <glog/logging.h>
+#include <cassert>
 
 namespace folly {
 
 AsyncTimeout::AsyncTimeout(TimeoutManager* timeoutManager)
     : timeoutManager_(timeoutManager) {
-  folly_event_set(
-      &event_, -1, EV_TIMEOUT, &AsyncTimeout::libeventCallback, this);
+  event_set(
+      &event_,
+      NetworkSocket::invalid_handle_value,
+      EV_TIMEOUT,
+      &AsyncTimeout::libeventCallback,
+      this);
   event_.ev_base = nullptr;
   timeoutManager_->attachTimeoutManager(
       this, TimeoutManager::InternalEnum::NORMAL);
 }
 
 AsyncTimeout::AsyncTimeout(EventBase* eventBase) : timeoutManager_(eventBase) {
-  folly_event_set(
-      &event_, -1, EV_TIMEOUT, &AsyncTimeout::libeventCallback, this);
+  event_set(
+      &event_,
+      NetworkSocket::invalid_handle_value,
+      EV_TIMEOUT,
+      &AsyncTimeout::libeventCallback,
+      this);
   event_.ev_base = nullptr;
   if (eventBase) {
     timeoutManager_->attachTimeoutManager(
@@ -47,23 +56,35 @@ AsyncTimeout::AsyncTimeout(
     TimeoutManager* timeoutManager,
     InternalEnum internal)
     : timeoutManager_(timeoutManager) {
-  folly_event_set(
-      &event_, -1, EV_TIMEOUT, &AsyncTimeout::libeventCallback, this);
+  event_set(
+      &event_,
+      NetworkSocket::invalid_handle_value,
+      EV_TIMEOUT,
+      &AsyncTimeout::libeventCallback,
+      this);
   event_.ev_base = nullptr;
   timeoutManager_->attachTimeoutManager(this, internal);
 }
 
 AsyncTimeout::AsyncTimeout(EventBase* eventBase, InternalEnum internal)
     : timeoutManager_(eventBase) {
-  folly_event_set(
-      &event_, -1, EV_TIMEOUT, &AsyncTimeout::libeventCallback, this);
+  event_set(
+      &event_,
+      NetworkSocket::invalid_handle_value,
+      EV_TIMEOUT,
+      &AsyncTimeout::libeventCallback,
+      this);
   event_.ev_base = nullptr;
   timeoutManager_->attachTimeoutManager(this, internal);
 }
 
 AsyncTimeout::AsyncTimeout() : timeoutManager_(nullptr) {
-  folly_event_set(
-      &event_, -1, EV_TIMEOUT, &AsyncTimeout::libeventCallback, this);
+  event_set(
+      &event_,
+      NetworkSocket::invalid_handle_value,
+      EV_TIMEOUT,
+      &AsyncTimeout::libeventCallback,
+      this);
   event_.ev_base = nullptr;
 }
 
@@ -75,6 +96,13 @@ bool AsyncTimeout::scheduleTimeout(TimeoutManager::timeout_type timeout) {
   assert(timeoutManager_ != nullptr);
   context_ = RequestContext::saveContext();
   return timeoutManager_->scheduleTimeout(this, timeout);
+}
+
+bool AsyncTimeout::scheduleTimeoutHighRes(
+    TimeoutManager::timeout_type_high_res timeout) {
+  assert(timeoutManager_ != nullptr);
+  context_ = RequestContext::saveContext();
+  return timeoutManager_->scheduleTimeoutHighRes(this, timeout);
 }
 
 bool AsyncTimeout::scheduleTimeout(uint32_t milliseconds) {
@@ -128,8 +156,8 @@ void AsyncTimeout::detachEventBase() {
 }
 
 void AsyncTimeout::libeventCallback(libevent_fd_t fd, short events, void* arg) {
-  AsyncTimeout* timeout = reinterpret_cast<AsyncTimeout*>(arg);
-  assert(libeventFdToFd(fd) == -1);
+  auto timeout = reinterpret_cast<AsyncTimeout*>(arg);
+  assert(fd == NetworkSocket::invalid_handle_value);
   assert(events == EV_TIMEOUT);
   // prevent unused variable warnings
   (void)fd;

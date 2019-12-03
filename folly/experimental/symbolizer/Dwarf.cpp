@@ -1,11 +1,11 @@
 /*
- * Copyright 2012-present Facebook, Inc.
+ * Copyright (c) Facebook, Inc. and its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -18,13 +18,7 @@
 
 #include <type_traits>
 
-// We can delete this #if check once we completely deprecate and remove
-// the autoconf build.
-#if __has_include(<libdwarf/dwarf.h>)
-#include <libdwarf/dwarf.h>
-#else
-#include <dwarf.h> // @manual
-#endif
+#include <dwarf.h>
 
 namespace folly {
 namespace symbolizer {
@@ -603,7 +597,7 @@ bool Dwarf::findAddress(
       // it only if such behavior is requested via LocationInfoMode.
       return false;
     } else {
-      DCHECK(mode == LocationInfoMode::FULL);
+      FOLLY_SAFE_DCHECK(mode == LocationInfoMode::FULL, "unexpected mode");
       // Fall back to the linear scan.
     }
   }

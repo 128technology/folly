@@ -1,11 +1,11 @@
 /*
- * Copyright 2017-present Facebook, Inc.
+ * Copyright (c) Facebook, Inc. and its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -18,11 +18,14 @@
 
 #include <stdint.h>
 
+#include <random>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
 
+#include <folly/Conv.h>
 #include <folly/MapUtil.h>
+#include <folly/Random.h>
 #include <folly/Range.h>
 #include <folly/portability/GTest.h>
 
@@ -494,6 +497,15 @@ TEST(Hash, std_tuple) {
   EXPECT_EQ("bar", m[t]);
 }
 
+TEST(Hash, std_empty_tuple) {
+  std::unordered_map<std::tuple<>, std::string, folly::Hash> m;
+  m[{}] = "foo";
+  EXPECT_EQ(m[{}], "foo");
+
+  folly::hasher<std::tuple<>> h;
+  EXPECT_EQ(h({}), 0);
+}
+
 TEST(Hash, enum_type) {
   const auto hash = folly::Hash();
 
@@ -547,6 +559,36 @@ TEST(Hash, hash_range) {
   EXPECT_EQ(hash_vector<int>({}), hash_vector<float>({}));
 }
 
+TEST(Hash, commutative_hash_combine) {
+  EXPECT_EQ(
+      commutative_hash_combine_value_generic(
+          folly::Hash{}(12345ul), folly::Hash{}, 6789ul),
+      commutative_hash_combine_value_generic(
+          folly::Hash{}(6789ul), folly::Hash{}, 12345ul));
+
+  std::vector<int> v = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
+  std::random_device rd;
+  std::mt19937 g(rd());
+  auto h = commutative_hash_combine_range(v.begin(), v.end());
+  for (int i = 0; i < 100; i++) {
+    std::shuffle(v.begin(), v.end(), g);
+    EXPECT_EQ(h, commutative_hash_combine_range(v.begin(), v.end()));
+  }
+  EXPECT_NE(
+      h,
+      commutative_hash_combine_range_generic(
+          /* seed = */ 0xdeadbeef, folly::Hash{}, v.begin(), v.end()));
+  EXPECT_NE(
+      h, commutative_hash_combine_range(v.begin(), v.begin() + (v.size() - 1)));
+
+  EXPECT_EQ(h, commutative_hash_combine(1, 2, 3, 4, 5, 6, 7, 8, 9, 10));
+  EXPECT_EQ(h, commutative_hash_combine(10, 2, 3, 4, 5, 6, 7, 8, 9, 1));
+
+  EXPECT_EQ(
+      commutative_hash_combine(12345, 6789),
+      commutative_hash_combine(6789, 12345));
+}
+
 TEST(Hash, std_tuple_different_hash) {
   typedef std::tuple<int64_t, std::string, int32_t> tuple3;
   tuple3 t1(42, "foo", 1);
@@ -583,6 +625,57 @@ TEST(Hash, Strings) {
   EXPECT_EQ(h2(a2), h2(a2.str()));
   EXPECT_EQ(h2(a3), h2(a3.str()));
   EXPECT_EQ(h2(a4), h2(a4.str()));
+}
+
+namespace {
+void deletePointer(const std::unique_ptr<std::string>&) {}
+void deletePointer(const std::shared_ptr<std::string>&) {}
+void deletePointer(std::string* pointer) {
+  delete pointer;
+}
+
+template <template <typename...> class PtrType>
+void pointerTestWithFollyHash() {
+  std::unordered_set<PtrType<std::string>, folly::Hash> set;
+
+  for (auto i = 0; i < 1000; ++i) {
+    auto random = PtrType<std::string>{
+        new std::string{folly::to<std::string>(folly::Random::rand64())}};
+    set.insert(std::move(random));
+  }
+
+  for (auto& pointer : set) {
+    EXPECT_TRUE(set.find(pointer) != set.end());
+    deletePointer(pointer);
+  }
+}
+
+template <typename T>
+using Pointer = T*;
+} // namespace
+
+TEST(Hash, UniquePtr) {
+  pointerTestWithFollyHash<std::unique_ptr>();
+}
+
+TEST(Hash, SharedPtr) {
+  pointerTestWithFollyHash<std::shared_ptr>();
+}
+
+TEST(Hash, Pointer) {
+  pointerTestWithFollyHash<Pointer>();
+
+  EXPECT_TRUE(
+      (std::is_same<
+          folly::hasher<std::string*>::folly_is_avalanching,
+          folly::hasher<std::unique_ptr<std::string>>::folly_is_avalanching>::
+           value));
+
+  EXPECT_TRUE(
+      (std::is_same<
+          folly::hasher<std::string*>::folly_is_avalanching,
+          folly::hasher<std::shared_ptr<std::string>>::folly_is_avalanching>::
+           value));
 }
 
 struct FNVTestParam {

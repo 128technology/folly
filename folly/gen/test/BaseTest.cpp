@@ -1,11 +1,11 @@
 /*
- * Copyright 2014-present Facebook, Inc.
+ * Copyright (c) Facebook, Inc. and its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -1201,6 +1201,22 @@ TEST(Gen, Guard) {
   // clang-format on
 }
 
+// Disabled: guard currently can't catch exceptions thrown after a buffering op.
+TEST(Gen, DISABLED_GuardThroughBuffers) {
+  using std::runtime_error;
+  // clang-format off
+  EXPECT_EQ(
+      4,
+      (from({"1", "a", "3"})
+         | guard<runtime_error>([](runtime_error&, const char*) {
+             return true;
+           })
+         | batch(1)
+         | rconcat
+         | eachTo<int>()
+         | sum));
+  // clang-format on
+}
 TEST(Gen, eachTryTo) {
   using std::runtime_error;
   // clang-format off

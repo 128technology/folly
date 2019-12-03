@@ -1,11 +1,11 @@
 /*
- * Copyright 2013-present Facebook, Inc.
+ * Copyright (c) Facebook, Inc. and its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -264,6 +264,13 @@ bool Codec::canUncompress(const IOBuf*, Optional<uint64_t>) const {
   return false;
 }
 
+bool Codec::canUncompress(
+    StringPiece data,
+    Optional<uint64_t> uncompressedLength) const {
+  auto buf = IOBuf::wrapBufferAsValue(data.data(), data.size());
+  return canUncompress(&buf, uncompressedLength);
+}
+
 std::string Codec::doCompressString(const StringPiece data) {
   const IOBuf inputBuffer{IOBuf::WRAP_BUFFER, data};
   auto outputBuffer = doCompress(&inputBuffer);
@@ -303,6 +310,13 @@ Optional<uint64_t> Codec::getUncompressedLength(
     return 0;
   }
   return doGetUncompressedLength(data, uncompressedLength);
+}
+
+Optional<uint64_t> Codec::getUncompressedLength(
+    StringPiece data,
+    Optional<uint64_t> uncompressedLength) const {
+  auto buf = IOBuf::wrapBufferAsValue(data.data(), data.size());
+  return getUncompressedLength(&buf, uncompressedLength);
 }
 
 Optional<uint64_t> Codec::doGetUncompressedLength(
@@ -1323,6 +1337,15 @@ static lzma_ret lzmaThrowOnError(lzma_ret const rc) {
     case LZMA_STREAM_END:
     case LZMA_BUF_ERROR: // not fatal: returned if no progress was made twice
       return rc;
+    case LZMA_NO_CHECK:
+    case LZMA_UNSUPPORTED_CHECK:
+    case LZMA_GET_CHECK:
+    case LZMA_MEM_ERROR:
+    case LZMA_MEMLIMIT_ERROR:
+    case LZMA_FORMAT_ERROR:
+    case LZMA_OPTIONS_ERROR:
+    case LZMA_DATA_ERROR:
+    case LZMA_PROG_ERROR:
     default:
       throw std::runtime_error(
           to<std::string>("LZMA2StreamCodec: error: ", rc));
@@ -2088,7 +2111,7 @@ constexpr Factory
 };
 
 Factory const& getFactory(CodecType type) {
-  size_t const idx = static_cast<size_t>(type);
+  auto const idx = static_cast<size_t>(type);
   if (idx >= static_cast<size_t>(CodecType::NUM_CODEC_TYPES)) {
     throw std::invalid_argument(
         to<std::string>("Compression type ", idx, " invalid"));

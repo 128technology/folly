@@ -1,11 +1,11 @@
 /*
- * Copyright 2015-present Facebook, Inc.
+ * Copyright (c) Facebook, Inc. and its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-// Copyright 2013-present Facebook. All Rights Reserved.
 
 #include <folly/experimental/StringKeyedMap.h>
 #include <folly/experimental/StringKeyedSet.h>
@@ -113,8 +112,8 @@ using ValueLeakChecker =
 
 using LeakCheckedUnorderedMap = StringKeyedUnorderedMap<
     int,
-    folly::hasher<StringPiece>,
-    std::equal_to<StringPiece>,
+    folly::transparent<folly::hasher<StringPiece>>,
+    folly::transparent<std::equal_to<StringPiece>>,
     MemoryLeakCheckerAllocator<
         std::allocator<std::pair<const std::string, int>>>>;
 
@@ -125,8 +124,8 @@ typedef StringKeyedMap<int, std::less<StringPiece>, KeyValuePairLeakChecker>
     LeakCheckedMap;
 
 using LeakCheckedUnorderedSet = BasicStringKeyedUnorderedSet<
-    folly::hasher<StringPiece>,
-    std::equal_to<folly::StringPiece>,
+    folly::transparent<folly::hasher<StringPiece>>,
+    folly::transparent<std::equal_to<folly::StringPiece>>,
     MemoryLeakCheckerAllocator<std::allocator<std::string>>>;
 
 TEST(StringKeyedUnorderedMapTest, sanity) {
@@ -144,7 +143,7 @@ TEST(StringKeyedUnorderedMapTest, sanity) {
 
   EXPECT_EQ(map.size(), 2);
 
-  map = map;
+  map = static_cast<decltype(map)&>(map); // suppress self-assign warning
 
   EXPECT_EQ(map.find("hello")->second, 1);
   EXPECT_EQ(map.find("lo")->second, 3);
@@ -227,7 +226,7 @@ TEST(StringKeyedSetTest, sanity) {
 
   EXPECT_EQ(set.size(), 2);
 
-  set = set;
+  set = static_cast<decltype(set)&>(set); // suppress self-assign warning
 
   EXPECT_NE(set.find(StringPiece("hello")), set.end());
   EXPECT_NE(set.find("lo"), set.end());
@@ -312,7 +311,7 @@ TEST(StringKeyedUnorderedSetTest, sanity) {
 
   EXPECT_EQ(set.size(), 2);
 
-  set = set;
+  set = static_cast<decltype(set)&>(set); // suppress self-assign warning
 
   EXPECT_NE(set.find("hello"), set.end());
   EXPECT_NE(set.find("lo"), set.end());
@@ -437,7 +436,7 @@ TEST(StringKeyedMapTest, sanity) {
 
   EXPECT_EQ(map.size(), 2);
 
-  map = map;
+  map = static_cast<decltype(map)&>(map); // suppress self-assign warning
 
   EXPECT_EQ(map.find("hello")->second, 1);
   EXPECT_EQ(map.find("lo")->second, 3);

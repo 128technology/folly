@@ -1,11 +1,11 @@
 /*
- * Copyright 2013-present Facebook, Inc.
+ * Copyright (c) Facebook, Inc. and its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -29,28 +29,21 @@ namespace test {
 void foo() {}
 
 TEST(Symbolizer, Single) {
-  Symbolizer symbolizer;
+  // It looks like we could only use .debug_aranges with "-g2", with
+  // "-g1 -gdwarf-aranges", the code has to fallback to line-tables to
+  // get the file name.
+  Symbolizer symbolizer(Dwarf::LocationInfoMode::FULL);
   SymbolizedFrame a;
   ASSERT_TRUE(symbolizer.symbolize(reinterpret_cast<uintptr_t>(foo), a));
   EXPECT_EQ("folly::symbolizer::test::foo()", a.demangledName());
 
-  // The version of clang we use doesn't generate a `.debug_aranges` section,
-  // which the symbolizer needs to lookup the filename.
-  constexpr bool built_with_clang =
-#ifdef __clang__
-      true;
-#else
-      false;
-#endif
-  if (!built_with_clang) {
-    auto path = a.location.file.toString();
-    folly::StringPiece basename(path);
-    auto pos = basename.rfind('/');
-    if (pos != folly::StringPiece::npos) {
-      basename.advance(pos + 1);
-    }
-    EXPECT_EQ("SymbolizerTest.cpp", basename.str());
+  auto path = a.location.file.toString();
+  folly::StringPiece basename(path);
+  auto pos = basename.rfind('/');
+  if (pos != folly::StringPiece::npos) {
+    basename.advance(pos + 1);
   }
+  EXPECT_EQ("SymbolizerTest.cpp", basename.str());
 }
 
 FrameArray<100>* framesToFill{nullptr};

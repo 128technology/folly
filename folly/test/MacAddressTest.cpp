@@ -1,11 +1,11 @@
 /*
- * Copyright 2014-present Facebook, Inc.
+ * Copyright (c) Facebook, Inc. and its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -166,4 +166,13 @@ TEST(MacAddress, ordering) {
   testCmp("00:00:00:00:00:01", "00:00:00:00:00:02");
   testCmp("01:00:00:00:00:00", "02:00:00:00:00:00");
   testCmp("00:00:00:00:00:01", "00:00:00:00:01:00");
+}
+
+TEST(MacAddress, hash) {
+  EXPECT_EQ(
+      std::hash<MacAddress>()(MacAddress("00:11:22:33:44:55")),
+      std::hash<MacAddress>()(MacAddress("00-11-22-33-44-55")));
+  EXPECT_NE(
+      std::hash<MacAddress>()(MacAddress("00:11:22:33:44:55")),
+      std::hash<MacAddress>()(MacAddress("00:11:22:33:44:56")));
 }

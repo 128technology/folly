@@ -1,11 +1,11 @@
 /*
- * Copyright 2014-present Facebook, Inc.
+ * Copyright (c) Facebook, Inc. and its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -84,6 +84,23 @@ TEST(ExceptionWrapper, throw_test) {
     std::string expected = "payload";
     std::string actual = err.what();
     EXPECT_EQ(expected, actual);
+  }
+}
+
+// Tests that when we call throw_with_nested, we can unnest it later.
+TEST(ExceptionWrapper, throw_with_nested) {
+  auto ew = make_exception_wrapper<std::runtime_error>("inner");
+  try {
+    ew.throw_with_nested(std::runtime_error("outer"));
+    ADD_FAILURE();
+  } catch (std::runtime_error& outer) {
+    EXPECT_STREQ(outer.what(), "outer");
+    try {
+      std::rethrow_if_nested(outer);
+      ADD_FAILURE();
+    } catch (std::runtime_error& inner) {
+      EXPECT_STREQ(inner.what(), "inner");
+    }
   }
 }
 

@@ -1,11 +1,11 @@
 /*
- * Copyright 2017-present Facebook, Inc.
+ * Copyright (c) Facebook, Inc. and its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -29,6 +29,16 @@ SyncVecThreadPoolExecutors& getSyncVecThreadPoolExecutors() {
   return *storage;
 }
 
+void ThreadPoolExecutor::registerThreadPoolExecutor(ThreadPoolExecutor* tpe) {
+  getSyncVecThreadPoolExecutors().wlock()->push_back(tpe);
+}
+
+void ThreadPoolExecutor::deregisterThreadPoolExecutor(ThreadPoolExecutor* tpe) {
+  getSyncVecThreadPoolExecutors().withWLock([tpe](auto& tpes) {
+    tpes.erase(std::remove(tpes.begin(), tpes.end(), tpe), tpes.end());
+  });
+}
+
 DEFINE_int64(
     threadtimeout_ms,
     60000,
@@ -44,16 +54,11 @@ ThreadPoolExecutor::ThreadPoolExecutor(
       taskStatsCallbacks_(std::make_shared<TaskStatsCallbackRegistry>()),
       threadPoolHook_("folly::ThreadPoolExecutor"),
       minThreads_(minThreads),
-      threadTimeout_(FLAGS_threadtimeout_ms) {
-  getSyncVecThreadPoolExecutors()->push_back(this);
-}
+      threadTimeout_(FLAGS_threadtimeout_ms) {}
 
 ThreadPoolExecutor::~ThreadPoolExecutor() {
   joinKeepAliveOnce();
   CHECK_EQ(0, threadList_.get().size());
-  getSyncVecThreadPoolExecutors().withWLock([this](auto& tpe) {
-    tpe.erase(std::remove(tpe.begin(), tpe.end(), this), tpe.end());
-  });
 }
 
 ThreadPoolExecutor::Task::Task(
@@ -113,11 +118,16 @@ void ThreadPoolExecutor::runTask(const ThreadPtr& thread, Task&& task) {
   });
 }
 
-size_t ThreadPoolExecutor::numThreads() {
+void ThreadPoolExecutor::add(Func, std::chrono::milliseconds, Func) {
+  throw std::runtime_error(
+      "add() with expiration is not implemented for this Executor");
+}
+
+size_t ThreadPoolExecutor::numThreads() const {
   return maxThreads_.load(std::memory_order_relaxed);
 }
 
-size_t ThreadPoolExecutor::numActiveThreads() {
+size_t ThreadPoolExecutor::numActiveThreads() const {
   return activeThreads_.load(std::memory_order_relaxed);
 }
 
@@ -254,7 +264,7 @@ void ThreadPoolExecutor::withAll(FunctionRef<void(ThreadPoolExecutor&)> f) {
   });
 }
 
-ThreadPoolExecutor::PoolStats ThreadPoolExecutor::getPoolStats() {
+ThreadPoolExecutor::PoolStats ThreadPoolExecutor::getPoolStats() const {
   const auto now = std::chrono::steady_clock::now();
   SharedMutex::ReadHolder r{&threadListLock_};
   ThreadPoolExecutor::PoolStats stats;
@@ -279,12 +289,12 @@ ThreadPoolExecutor::PoolStats ThreadPoolExecutor::getPoolStats() {
   return stats;
 }
 
-size_t ThreadPoolExecutor::getPendingTaskCount() {
+size_t ThreadPoolExecutor::getPendingTaskCount() const {
   SharedMutex::ReadHolder r{&threadListLock_};
   return getPendingTaskCountImpl();
 }
 
-std::string ThreadPoolExecutor::getName() {
+std::string ThreadPoolExecutor::getName() const {
   auto ntf = dynamic_cast<NamedThreadFactory*>(threadFactory_.get());
   if (ntf == nullptr) {
     return folly::demangle(typeid(*this).name()).toStdString();

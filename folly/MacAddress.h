@@ -1,11 +1,11 @@
 /*
- * Copyright 2014-present Facebook, Inc.
+ * Copyright (c) Facebook, Inc. and its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -18,6 +18,7 @@
 
 #include <iosfwd>
 
+#include <folly/Conv.h>
 #include <folly/Range.h>
 #include <folly/lang/Bits.h>
 
@@ -231,3 +232,15 @@ typename std::enable_if<IsSomeString<Tgt>::value>::type toAppend(
 std::ostream& operator<<(std::ostream& os, MacAddress address);
 
 } // namespace folly
+
+namespace std {
+
+// Provide an implementation for std::hash<MacAddress>
+template <>
+struct hash<folly::MacAddress> {
+  size_t operator()(const folly::MacAddress& address) const {
+    return std::hash<uint64_t>()(address.u64HBO());
+  }
+};
+
+} // namespace std

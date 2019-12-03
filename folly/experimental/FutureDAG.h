@@ -1,11 +1,11 @@
 /*
- * Copyright 2015-present Facebook, Inc.
+ * Copyright (c) Facebook, Inc. and its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 #pragma once
 
 #include <folly/futures/Future.h>
@@ -123,19 +124,19 @@ class FutureDAG : public std::enable_shared_from_this<FutureDAG> {
 
       collect(dependencies)
           .via(nodes[handle].executor)
-          .then([this, handle] {
+          .thenValue([this, handle](std::vector<Unit>&&) {
             nodes[handle].func().then([this, handle](Try<Unit>&& t) {
               nodes[handle].promise.setTry(std::move(t));
             });
           })
-          .onError([this, handle](exception_wrapper ew) {
+          .thenError([this, handle](exception_wrapper ew) {
             nodes[handle].promise.setException(std::move(ew));
           });
     }
 
     nodes[sourceHandle].promise.setValue();
-    return nodes[sinkHandle].promise.getFuture().then(
-        [that = shared_from_this(), sourceHandle, sinkHandle]() {
+    return nodes[sinkHandle].promise.getFuture().thenValue(
+        [that = shared_from_this(), sourceHandle, sinkHandle](Unit) {
           that->clean_state(sourceHandle, sinkHandle);
         });
   }

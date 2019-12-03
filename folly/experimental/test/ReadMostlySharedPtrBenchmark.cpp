@@ -1,11 +1,11 @@
 /*
- * Copyright 2015-present Facebook, Inc.
+ * Copyright (c) Facebook, Inc. and its affiliates.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *   http://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 /* -*- Mode: C++; tab-width: 2; c-basic-offset: 2; indent-tabs-mode: nil -*- */
 
 #include <folly/experimental/ReadMostlySharedPtr.h>
@@ -22,7 +23,6 @@
 
 #include <folly/Benchmark.h>
 #include <folly/Memory.h>
-#include <folly/experimental/RCURefCount.h>
 #include <folly/portability/GFlags.h>
 
 template <
@@ -52,10 +52,6 @@ void benchmark(size_t n) {
 }
 
 template <typename T>
-using RCUMainPtr = folly::ReadMostlyMainPtr<T, folly::RCURefCount>;
-template <typename T>
-using RCUWeakPtr = folly::ReadMostlyWeakPtr<T, folly::RCURefCount>;
-template <typename T>
 using TLMainPtr = folly::ReadMostlyMainPtr<T, folly::TLRefCount>;
 template <typename T>
 using TLWeakPtr = folly::ReadMostlyWeakPtr<T, folly::TLRefCount>;
@@ -66,14 +62,6 @@ BENCHMARK(WeakPtrOneThread, n) {
 
 BENCHMARK(WeakPtrFourThreads, n) {
   benchmark<std::shared_ptr, std::weak_ptr, 4>(n);
-}
-
-BENCHMARK(RCUReadMostlyWeakPtrOneThread, n) {
-  benchmark<RCUMainPtr, RCUWeakPtr, 1>(n);
-}
-
-BENCHMARK(RCUReadMostlyWeakPtrFourThreads, n) {
-  benchmark<RCUMainPtr, RCUWeakPtr, 4>(n);
 }
 
 BENCHMARK(TLReadMostlyWeakPtrOneThread, n) {
